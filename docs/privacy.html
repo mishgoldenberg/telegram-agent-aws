@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — personal-assistant</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 42rem; margin: 0 auto; padding: 3rem 1.25rem 6rem;
+    background: #fff; color: #1a1a1a;
+  }
+  @media (prefers-color-scheme: dark) { body { background: #16181c; color: #e6e8ea; } }
+  h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 .35rem; }
+  h2 { font-size: 1.1rem; margin: 2.25rem 0 .5rem; }
+  .sub { color: #6b7280; margin: 0 0 2rem; }
+  ul { padding-left: 1.2rem; }
+  li { margin-bottom: .4rem; }
+  code { background: rgba(127,127,127,.15); padding: .1em .35em; border-radius: 3px; font-size: .9em; }
+  a { color: #2563eb; }
+  @media (prefers-color-scheme: dark) { a { color: #7aa7ff; } }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid rgba(127,127,127,.3); color: #6b7280; font-size: .9rem; }
+</style>
+</head>
+<body>
+
+<h1>Privacy Policy</h1>
+<p class="sub">personal-assistant · last updated 4 September 2026</p>
+
+<p><strong>personal-assistant</strong> is a private, single-user Telegram assistant built and operated by
+one individual for their own use. It is not a commercial product, has no other users, and is not
+offered to the public. This policy describes exactly what it touches.</p>
+
+<h2>Who operates it</h2>
+<p>Michael Goldenberg. Contact: <a href="mailto:golden.mihel@gmail.com">golden.mihel@gmail.com</a>.</p>
+
+<h2>Google data it accesses</h2>
+<ul>
+  <li><code>calendar</code> — read and create calendar events on request.</li>
+  <li><code>tasks</code> — read and create tasks on request.</li>
+  <li><code>gmail.readonly</code> — read message metadata and content to answer questions about
+      email. It cannot send, modify, or delete mail.</li>
+</ul>
+<p>Access is granted by the account owner through Google's own consent screen and can be revoked
+at any time at
+<a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.
+Revoking access immediately and permanently stops all data access.</p>
+
+<h2>Where the data goes</h2>
+<p>Two places, and nowhere else:</p>
+<ul>
+  <li><strong>The operator's own computer.</strong> All language-model inference runs locally via
+      Ollama, and all speech-to-text runs locally via Whisper. No message content, calendar entry,
+      task, or email is sent to any third-party AI service.</li>
+  <li><strong>The operator's own AWS account</strong> (region eu-central-1), which handles message
+      delivery only. It stores Telegram message text briefly in transit, voice recordings, and
+      recent conversation history.</li>
+</ul>
+
+<h2>How long it is kept</h2>
+<ul>
+  <li><strong>Voice recordings</strong> — deleted automatically after 7 days by an S3 lifecycle rule.</li>
+  <li><strong>Conversation history</strong> — deleted automatically after 7 days of inactivity by a
+      DynamoDB time-to-live attribute.</li>
+  <li><strong>Queued messages</strong> — discarded after 1 hour if not processed.</li>
+  <li><strong>Operational logs</strong> — deleted after 7 days. They record events and message
+      lengths, not message content.</li>
+</ul>
+<p>Google data itself is never copied into long-term storage. It is fetched when a question needs
+it, used to answer, and discarded.</p>
+
+<h2>What is never done</h2>
+<ul>
+  <li>Data is never sold, rented, or shared with any third party.</li>
+  <li>Data is never used to train any machine-learning model.</li>
+  <li>There is no advertising, tracking, profiling, or analytics of any kind.</li>
+  <li>No other person has access. The assistant refuses every Telegram user except the operator.</li>
+</ul>
+
+<h2>Security</h2>
+<ul>
+  <li>Credentials are held in AWS Systems Manager Parameter Store as encrypted SecureStrings, never
+      in source code or configuration files.</li>
+  <li>The public webhook authenticates every request against a shared secret and rejects any
+      message from an unrecognised Telegram user.</li>
+  <li>All storage is encrypted at rest and blocked from public access; all transport is HTTPS, with
+      plaintext requests explicitly denied.</li>
+  <li>The source code is public at
+      <a href="https://github.com/mishgoldenberg/telegram-agent-aws">github.com/mishgoldenberg/telegram-agent-aws</a>
+      and can be inspected to confirm all of the above.</li>
+</ul>
+
+<h2>Google API Services User Data Policy</h2>
+<p>This application's use and transfer of information received from Google APIs adheres to the
+<a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services
+User Data Policy</a>, including the Limited Use requirements.</p>
+
+<h2>Changes</h2>
+<p>Any change to this policy will be published on this page with an updated date. The page history
+is public in the repository linked above.</p>
+
+<footer>
+  <a href="./">personal-assistant</a> ·
+  <a href="https://github.com/mishgoldenberg/telegram-agent-aws">source</a>
+</footer>
+
+</body>
+</html>
