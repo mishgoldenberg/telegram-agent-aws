@@ -1,0 +1,55 @@
+# ---- secrets: never commit ----
+.env
+.env.*
+!.env.example
+credentials.json
+token.json
+token.json.*
+*.pem
+*.key
+*.p12
+*.pfx
+.aws/
+terraform.tfvars
+*.auto.tfvars
+!terraform.tfvars.example
+
+# ---- local state / personal data ----
+memory.db
+*.sqlite
+*.sqlite3
+.autostart_state
+ab_results/
+
+# ---- python ----
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# ---- terraform ----
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+tfplan
+*.tfplan
+override.tf
+override.tf.json
+
+# ---- lambda build artifacts ----
+dist/
+build/
+*.zip
+
+# ---- editor / os ----
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
