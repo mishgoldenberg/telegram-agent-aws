@@ -28,20 +28,21 @@ terraform {
     }
   }
 
-  # DELIBERATELY COMMENTED OUT ON FIRST RUN.
-  #
-  # Run order:
-  #   1. terraform init && terraform apply   (local state; creates bucket + table)
+  # Enabled AFTER the first apply. The sequence that got us here:
+  #   1. terraform init && terraform apply   (local state; created bucket + table)
   #   2. uncomment this block, filling in the two outputs
-  #   3. terraform init -migrate-state       (moves local state into S3)
+  #   3. terraform init -migrate-state       (moved local state into S3)
   #
-  # backend "s3" {
-  #   bucket         = "REPLACE_WITH_state_bucket_name_OUTPUT"
-  #   key            = "bootstrap/terraform.tfstate"
-  #   region         = "eu-central-1"
-  #   dynamodb_table = "REPLACE_WITH_lock_table_name_OUTPUT"
-  #   encrypt        = true
-  # }
+  # From here on this stack is no different from any other: its state lives in
+  # the bucket it created, locked by the table it created. The bucket name is
+  # a hash of the account id, not the id itself — see locals.account_hash.
+  backend "s3" {
+    bucket         = "tg-agent-tfstate-81b4d8bc"
+    key            = "bootstrap/terraform.tfstate"
+    region         = "eu-central-1"
+    dynamodb_table = "tg-agent-tflock"
+    encrypt        = true
+  }
 }
 
 provider "aws" {
