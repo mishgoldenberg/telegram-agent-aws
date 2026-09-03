@@ -64,16 +64,33 @@ locals {
   }
 }
 
-# Used to make the bucket name globally unique without hardcoding an account id
-# into the repo. S3 bucket names are a single global namespace.
+# S3 bucket names occupy a single global namespace, so the name needs an
+# account-specific component to avoid colliding with a stranger's bucket.
 data "aws_caller_identity" "current" {}
+
+locals {
+  # DERIVED FROM the account id, but deliberately not the account id itself.
+  #
+  # The obvious choice is to suffix the bucket with the raw account id. The
+  # problem: the resulting bucket name is committed verbatim into the backend
+  # block of every stack in this repo, and this repo is going to be public.
+  # AWS account ids are not secrets, but publishing one hands an attacker a
+  # confirmed live target for role-name enumeration and support-desk social
+  # engineering, for no benefit whatsoever.
+  #
+  # A truncated SHA-256 keeps the name deterministic — the same account always
+  # resolves to the same bucket, so the committed backend block stays valid —
+  # while leaking nothing. 8 hex chars is ~4 billion values, ample given the
+  # name is already namespaced by var.project.
+  account_hash = substr(sha256(data.aws_caller_identity.current.account_id), 0, 8)
+}
 
 ###############################################################################
 # State bucket
 ###############################################################################
 
 resource "aws_s3_bucket" "state" {
-  bucket = "${var.project}-tfstate-${data.aws_caller_identity.current.account_id}"
+  bucket = "${var.project}-tfstate-${local.account_hash}"
 
   # State is the one thing here that must never be casually destroyed. Losing
   # it means Terraform forgets every resource it manages, and a fresh apply
