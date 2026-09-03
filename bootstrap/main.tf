@@ -30,18 +30,29 @@ terraform {
 
   # Enabled AFTER the first apply. The sequence that got us here:
   #   1. terraform init && terraform apply   (local state; created bucket + table)
-  #   2. uncomment this block, filling in the two outputs
+  #   2. uncomment this block, filling in the outputs
   #   3. terraform init -migrate-state       (moved local state into S3)
   #
-  # From here on this stack is no different from any other: its state lives in
-  # the bucket it created, locked by the table it created. The bucket name is
-  # a hash of the account id, not the id itself — see locals.account_hash.
+  # LOCKING: use_lockfile, not dynamodb_table.
+  #
+  # This stack originally used a DynamoDB lock table (commit 8b93713) because
+  # that was the canonical pattern for a decade. Terraform 1.15 warns on every
+  # plan that "dynamodb_table" is deprecated in favour of "use_lockfile".
+  #
+  # use_lockfile makes the S3 backend take a lock via S3's own conditional
+  # writes (PutObject with If-None-Match, available since Aug 2024). It writes
+  # a .tflock object next to the state file. Same mutual exclusion, one fewer
+  # resource, one fewer IAM policy, and no DynamoDB dependency at all.
+  #
+  # The lock table was destroyed in the commit that introduced this comment.
+  # Its construction is preserved in git history rather than in dead
+  # infrastructure.
   backend "s3" {
-    bucket         = "tg-agent-tfstate-81b4d8bc"
-    key            = "bootstrap/terraform.tfstate"
-    region         = "eu-central-1"
-    dynamodb_table = "tg-agent-tflock"
-    encrypt        = true
+    bucket       = "tg-agent-tfstate-81b4d8bc"
+    key          = "bootstrap/terraform.tfstate"
+    region       = "eu-central-1"
+    use_lockfile = true
+    encrypt      = true
   }
 }
 
@@ -191,53 +202,27 @@ resource "aws_s3_bucket_policy" "state_tls_only" {
 }
 
 ###############################################################################
-# Lock table
+# Locking — no resource required
 ###############################################################################
 
-# WHY THIS EXISTS, AND WHY IT IS NOW LEGACY
-# -----------------------------------------
+# There is deliberately no lock table here.
+#
 # S3 historically had no compare-and-swap primitive, so two people running
 # `apply` at once could both read the same state, both write, and the second
 # would silently clobber the first. Terraform's answer was a DynamoDB table
-# with a conditional write on a hash key: whoever wins the PutItem holds the
-# lock.
+# with a conditional write on a hash key: whoever won the PutItem held the
+# lock. That table also stored a "<key>-md5" digest item, which the backend
+# used to detect a state file that had been corrupted or truncated between
+# writes.
 #
-# As of Terraform 1.10 the S3 backend supports `use_lockfile = true`, which
-# uses S3's own conditional writes (added Aug 2024) and removes the need for
-# this table entirely. This build creates the table deliberately, because
-# understanding why it existed is the point of the exercise.
+# In Aug 2024 S3 gained conditional writes (PutObject with If-None-Match), and
+# Terraform 1.10 exposed them as `use_lockfile`. The backend now takes the lock
+# by writing a .tflock object beside the state file. Same mutual exclusion,
+# one fewer resource, one fewer IAM policy, no second service in the critical
+# path of every apply.
 #
-# The interview answer: "I built the DynamoDB lock table, and I know it's
-# superseded by S3 native locking in 1.10+. I'd use use_lockfile on a new
-# project — one less resource, one less IAM policy, no extra cost."
-#
-# PROVISIONED, not on-demand: the DynamoDB always-free tier covers 25 WCU and
-# 25 RCU but does NOT cover on-demand request pricing. A lock table sees a
-# handful of writes per apply, so 1/1 is ample and costs nothing.
-resource "aws_dynamodb_table" "lock" {
-  name           = "${var.project}-tflock"
-  billing_mode   = "PROVISIONED"
-  read_capacity  = 1
-  write_capacity = 1
-
-  # Terraform requires the hash key to be exactly "LockID". Not configurable.
-  hash_key = "LockID"
-
-  attribute {
-    name = "LockID"
-    type = "S"
-  }
-
-  # Free, and allows recovery if the table is deleted or corrupted.
-  point_in_time_recovery {
-    enabled = true
-  }
-
-  server_side_encryption {
-    enabled = true # AWS-owned key, no charge
-  }
-
-  lifecycle {
-    prevent_destroy = true
-  }
-}
+# This stack built the DynamoDB table first (commit 8b93713) and destroyed it
+# once Terraform 1.15 flagged `dynamodb_table` as deprecated on every plan.
+# Keeping it would have meant either a permanent warning in plan output or an
+# unreferenced table sitting in the account. The construction is preserved in
+# git history, which is the right place for it.

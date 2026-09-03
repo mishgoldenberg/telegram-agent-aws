@@ -1,11 +1,6 @@
 output "state_bucket_name" {
-  description = "Paste into the backend block of this stack and every envs/* stack."
+  description = "Paste into the backend block of every envs/* stack."
   value       = aws_s3_bucket.state.id
-}
-
-output "lock_table_name" {
-  description = "Paste into the backend block as dynamodb_table."
-  value       = aws_dynamodb_table.lock.name
 }
 
 output "region" {
@@ -14,14 +9,20 @@ output "region" {
 }
 
 output "backend_block" {
-  description = "Ready-to-paste backend configuration; substitute <STACK> per stack."
+  description = <<-EOT
+    Ready-to-paste backend configuration; substitute <STACK> per stack.
+
+    No dynamodb_table: locking uses use_lockfile, which relies on S3
+    conditional writes. See the comment in main.tf for why the DynamoDB lock
+    table was built and then removed.
+  EOT
   value       = <<-EOT
     backend "s3" {
-      bucket         = "${aws_s3_bucket.state.id}"
-      key            = "<STACK>/terraform.tfstate"
-      region         = "${var.region}"
-      dynamodb_table = "${aws_dynamodb_table.lock.name}"
-      encrypt        = true
+      bucket       = "${aws_s3_bucket.state.id}"
+      key          = "<STACK>/terraform.tfstate"
+      region       = "${var.region}"
+      use_lockfile = true
+      encrypt      = true
     }
   EOT
 }
