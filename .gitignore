@@ -53,3 +53,9 @@ build/
 *.swp
 Thumbs.db
 desktop.ini
+
+# local run artifacts
+*.log
+*.err
+plan.txt
+apply*.txt
