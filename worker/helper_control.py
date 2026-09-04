@@ -120,6 +120,65 @@ def worker_pid() -> int | None:
     return None
 
 
+def _all_worker_procs() -> list[tuple[int, int]]:
+    """
+    Every running worker.py, not just the one in the pidfile.
+
+    Two workers polling the same queue is not catastrophic - SQS delivers each
+    message once - but an untracked one can never be stopped from this panel,
+    so it keeps consuming jobs and answering with whatever code it started
+    with. Easy to create by restarting twice in quick succession.
+    """
+    # Get-CimInstance, not wmic: wmic is deprecated and absent on current
+    # Windows 11 builds, where it fails silently and returns nothing - which
+    # looks exactly like "no orphans" and is the worst possible failure mode
+    # for a cleanup function.
+    ps = (
+        "Get-CimInstance Win32_Process -Filter \"Name like '%python%'\" | "
+        "Where-Object { $_.CommandLine -match 'worker\\.py' } | "
+        "ForEach-Object { \"$($_.ProcessId) $($_.ParentProcessId)\" }"
+    )
+    try:
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+            capture_output=True, text=True, timeout=25,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        ).stdout
+    except Exception:  # noqa: BLE001
+        return []
+    procs = []
+    for line in out.splitlines():
+        bits = line.split()
+        if len(bits) == 2 and bits[0].isdigit() and bits[1].isdigit():
+            procs.append((int(bits[0]), int(bits[1])))
+    return procs
+
+
+def kill_orphans() -> int:
+    """
+    Kill worker.py processes that belong to no tracked worker.
+
+    PARENTAGE MATTERS. Launching via the venv's python.exe produces TWO
+    processes - a launcher and its child - and only the launcher's pid is in
+    the pidfile. Treating the child as an orphan and killing it with
+    taskkill /T destroys the whole tree, i.e. the worker you meant to keep.
+    That is exactly what a first version of this function did.
+    """
+    tracked = worker_pid()
+    procs = _all_worker_procs()
+    tracked_family = {tracked} | {p for p, pp in procs if pp == tracked}
+
+    killed = 0
+    for pid, _ppid in procs:
+        if pid in tracked_family:
+            continue
+        subprocess.run(["taskkill", "/PID", str(pid), "/F", "/T"],
+                       capture_output=True,
+                       creationflags=subprocess.CREATE_NO_WINDOW)
+        killed += 1
+    return killed
+
+
 # ── actions ───────────────────────────────────────────────────────────────────
 
 def start_ollama() -> str:
@@ -137,8 +196,11 @@ def start_ollama() -> str:
 
 
 def start_worker() -> str:
+    # Sweep untracked workers first, so a double-start cannot leave one behind
+    # polling the queue with stale code.
+    orphans = kill_orphans()
     if worker_pid():
-        return "already running"
+        return "already running" + (f" ({orphans} orphan(s) cleared)" if orphans else "")
     if not VENV_PY.exists():
         return "venv python not found"
     out = open(LOG, "ab", buffering=0)
