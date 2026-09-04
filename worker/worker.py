@@ -208,6 +208,22 @@ def clear_wizard(chat_id: int) -> None:
     )
 
 
+_FAILURE_REPLIES = (
+    "couldn't fetch your data",
+    "не удалось получить данные",
+    "couldn't generate a response",
+    "не удалось получить ответ",
+    "couldn't process that request",
+    "⚠️",
+)
+
+
+def _is_failure_reply(text: str) -> bool:
+    """True for the agent's safe-error replies, which must not enter history."""
+    low = (text or "").lower()
+    return any(marker in low for marker in _FAILURE_REPLIES)
+
+
 def clear_history(chat_id: int) -> None:
     """Used by /clear. Deletes the session item outright rather than expiring it."""
     _ddb.delete_item(
@@ -304,8 +320,19 @@ def handle(job: dict) -> None:
     reply = run_agent(text, history=list(history), chat_id=chat_id)
     log.info("agent replied in %.1fs (%d chars)", time.time() - t0, len(reply or ""))
 
-    history.append({"role": "user", "content": text})
-    history.append({"role": "assistant", "content": reply})
+    # Do not persist failures into the conversation.
+    #
+    # The stored history contained "Couldn't fetch your data — please try
+    # again.", a fabricated weather report, and "Sure, I will reply only in
+    # English" — all fed back to the model on every later turn as if they were
+    # things the assistant had meaningfully said. Errors are not content; they
+    # teach the model nothing except that this kind of reply is acceptable.
+    if _is_failure_reply(reply):
+        log.info("not persisting failure reply to history")
+        history.append({"role": "user", "content": text})
+    else:
+        history.append({"role": "user", "content": text})
+        history.append({"role": "assistant", "content": reply})
     save_history(chat_id, history)
 
     send(chat_id, reply)
