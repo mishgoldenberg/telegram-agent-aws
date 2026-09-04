@@ -47,8 +47,22 @@ OLLAMA_CANDIDATES = [
     Path(r"C:\Program Files\Ollama\ollama.exe"),
 ]
 
-# Windows process-creation flags for a genuinely detached child.
-DETACHED = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+# Windows process-creation flags.
+#
+# CREATE_NO_WINDOW, not DETACHED_PROCESS. The difference matters:
+#
+#   DETACHED_PROCESS   gives the child NO console. python.exe then allocates
+#                      its own, which appears as a stray cmd window — and
+#                      closing that window kills the worker.
+#   CREATE_NO_WINDOW   gives the child its own console that is never shown.
+#                      Nothing to close, and CTRL_BREAK_EVENT still works, so
+#                      Stop can shut the worker down gracefully.
+#
+# CREATE_NEW_PROCESS_GROUP is required for CTRL_BREAK_EVENT to be deliverable
+# to the child rather than to this process.
+CREATE_NO_WINDOW = 0x08000000
+CREATE_NEW_PROCESS_GROUP = 0x00000200
+DETACHED = CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
 
 BG = "#12161a"
 CARD = "#1b2229"

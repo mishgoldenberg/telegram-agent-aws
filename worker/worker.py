@@ -81,6 +81,9 @@ os.chdir(ASSISTANT_DIR)
 from agent import run_agent          # noqa: E402
 from whisper_stt import transcribe   # noqa: E402
 
+sys.path.insert(0, str(HERE))
+import commands                      # noqa: E402
+
 # ── AWS clients ──────────────────────────────────────────────────────────────
 
 _sqs = boto3.client("sqs")
@@ -160,6 +163,14 @@ def load_history(chat_id: int) -> list:
         return []
 
 
+def clear_history(chat_id: int) -> None:
+    """Used by /clear. Deletes the session item outright rather than expiring it."""
+    _ddb.delete_item(
+        TableName=TABLE,
+        Key={"pk": {"S": f"chat#{chat_id}"}, "sk": {"S": "session"}},
+    )
+
+
 def save_history(chat_id: int, history: list) -> None:
     trimmed = history[-(MAX_HISTORY_TURNS * 2):]
     _ddb.put_item(
@@ -208,6 +219,16 @@ def handle(job: dict) -> None:
         send(chat_id, f"🎤 {text}")
     else:
         text = job["text"]
+
+    # ── Slash commands ────────────────────────────────────────────────────
+    # These were CommandHandlers in telegram_bot.py, which no longer runs.
+    # Without this, "/task" reached the model as literal text and was answered
+    # with a calendar listing.
+    reply = commands.handle(text, chat_id, clear_history)
+    if reply is not None:
+        log.info("command handled: %s", text.split()[0])
+        send(chat_id, reply)
+        return
 
     tg("sendChatAction", chat_id=chat_id, action="typing")
 
