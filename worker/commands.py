@@ -29,30 +29,48 @@ ASSISTANT = Path(r"C:\Users\User\Documents\llm-agent-test\assistant")
 if str(ASSISTANT) not in sys.path:
     sys.path.insert(0, str(ASSISTANT))
 
-# Commands that need multi-turn state. Not yet migrated - see module docstring.
-WIZARDS = {"task", "event", "template", "done", "cancel"}
+import wizards
 
-HELP = """*Assistant — AWS mode*
+# /task and /event are now real guided flows again, with state in DynamoDB.
+# /template and /done remain unmigrated.
+NOT_MIGRATED_CMDS = {"template", "done"}
 
-*Working now*
-/weather `[city]` — current conditions and forecast
+# Set by handle() when a command opens a wizard; the worker collects it and
+# persists it. A return value would have been cleaner, but keeping handle()'s
+# signature as "text in, reply out" keeps it trivially unit-testable.
+_pending_wizard: dict | None = None
+
+
+def take_pending_wizard() -> dict | None:
+    """Return and clear the wizard state a command just opened, if any."""
+    global _pending_wizard
+    state, _pending_wizard = _pending_wizard, None
+    return state
+
+HELP = """<b>Assistant — AWS mode</b>
+
+<b>Guided flows</b>
+/task — create a task, step by step
+/event — create a calendar event, step by step
+/cancel — abandon the current flow
+
+<b>One-shot</b>
+/weather [city] — current conditions and forecast
 /briefing — weather plus today's agenda
 /digest — evening summary
-/inbox `[n]` — summarise unread email (default 10)
+/inbox [n] — summarise unread email (default 10)
 /reminders — pending reminders
-/log `[date]` — calorie and habit log
+/log [date] — calorie and habit log
 /memory — stored facts
 /study — study dashboard
 /clear — clear conversation history
 /help — this message
 
-*Not available in AWS mode yet*
-/task, /event, /template, /done — these are multi-step wizards whose
-state has not been migrated to DynamoDB yet.
+<b>Not migrated yet</b>
+/template, /done
 
-You can still do all of it in plain language — "add a task to call the
-dentist tomorrow", "put gym at 8pm on Thursday" — which goes through the
-agent and works today."""
+Plain language works for everything too — "add a task to call the dentist
+tomorrow", "put gym at 8pm on Thursday"."""
 
 NOT_MIGRATED = (
     "⚠️ /{cmd} is a multi-step wizard and is not available in AWS mode yet.\n\n"
@@ -129,7 +147,17 @@ def handle(text: str, chat_id: int, clear_history) -> str | None:
     if cmd in ("help", "start", "menu"):
         return HELP
 
-    if cmd in WIZARDS:
+    if cmd in ("task", "event"):
+        global _pending_wizard
+        reply, _pending_wizard = wizards.start(cmd)
+        return reply
+
+    if cmd == "cancel":
+        # Reaching here means no wizard was in progress; an active one
+        # intercepts /cancel before commands are consulted.
+        return "Nothing to cancel."
+
+    if cmd in NOT_MIGRATED_CMDS:
         return NOT_MIGRATED.format(cmd=cmd)
 
     if cmd == "clear":

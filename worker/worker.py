@@ -83,6 +83,7 @@ from whisper_stt import transcribe   # noqa: E402
 
 sys.path.insert(0, str(HERE))
 import commands                      # noqa: E402
+import wizards                       # noqa: E402
 
 # ── AWS clients ──────────────────────────────────────────────────────────────
 
@@ -163,6 +164,50 @@ def load_history(chat_id: int) -> list:
         return []
 
 
+def load_wizard(chat_id: int) -> dict | None:
+    """
+    In-progress /task or /event flow, if any.
+
+    This item is what replaces python-telegram-bot's context.chat_data. It is
+    the whole reason a state table exists: a multi-turn flow needs to remember
+    which step the user is on, and the ingest path is stateless by design.
+    """
+    resp = _ddb.get_item(
+        TableName=TABLE,
+        Key={"pk": {"S": f"chat#{chat_id}"}, "sk": {"S": "wizard"}},
+    )
+    item = resp.get("Item")
+    if not item:
+        return None
+    # Expired items stay readable until DynamoDB's sweeper removes them, so
+    # the TTL is enforced here rather than trusted.
+    if int(item.get("expires_at", {}).get("N", "0")) < int(time.time()):
+        return None
+    try:
+        return json.loads(item["state"]["S"])
+    except (KeyError, json.JSONDecodeError):
+        return None
+
+
+def save_wizard(chat_id: int, state: dict) -> None:
+    _ddb.put_item(
+        TableName=TABLE,
+        Item={
+            "pk": {"S": f"chat#{chat_id}"},
+            "sk": {"S": "wizard"},
+            "state": {"S": json.dumps(state, ensure_ascii=False)},
+            "expires_at": {"N": str(int(time.time()) + wizards.WIZARD_TTL_SECONDS)},
+        },
+    )
+
+
+def clear_wizard(chat_id: int) -> None:
+    _ddb.delete_item(
+        TableName=TABLE,
+        Key={"pk": {"S": f"chat#{chat_id}"}, "sk": {"S": "wizard"}},
+    )
+
+
 def clear_history(chat_id: int) -> None:
     """Used by /clear. Deletes the session item outright rather than expiring it."""
     _ddb.delete_item(
@@ -220,14 +265,36 @@ def handle(job: dict) -> None:
     else:
         text = job["text"]
 
+    # ── Guided flows ──────────────────────────────────────────────────────
+    # An in-progress /task or /event wizard consumes the message BEFORE
+    # commands and before the agent — otherwise a task named "weather" would
+    # be swallowed by the weather command, and every answer would be handed to
+    # the model as a fresh question.
+    state = load_wizard(chat_id)
+    if state is not None:
+        reply, new_state = wizards.advance(state, text)
+        if new_state is None:
+            clear_wizard(chat_id)
+            log.info("wizard %s finished", state.get("kind"))
+        else:
+            save_wizard(chat_id, new_state)
+            log.info("wizard %s -> step %s", new_state["kind"], new_state["step"])
+        send(chat_id, reply, parse_mode="HTML")
+        return
+
     # ── Slash commands ────────────────────────────────────────────────────
     # These were CommandHandlers in telegram_bot.py, which no longer runs.
     # Without this, "/task" reached the model as literal text and was answered
     # with a calendar listing.
     reply = commands.handle(text, chat_id, clear_history)
     if reply is not None:
+        # A command may open a wizard rather than answer outright.
+        pending = commands.take_pending_wizard()
+        if pending:
+            save_wizard(chat_id, pending)
+            log.info("wizard %s started", pending["kind"])
         log.info("command handled: %s", text.split()[0])
-        send(chat_id, reply)
+        send(chat_id, reply, parse_mode="HTML")
         return
 
     tg("sendChatAction", chat_id=chat_id, action="typing")

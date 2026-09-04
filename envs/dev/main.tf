@@ -343,6 +343,11 @@ data "aws_iam_policy_document" "worker" {
       "dynamodb:GetItem",
       "dynamodb:PutItem",
       "dynamodb:UpdateItem",
+      # DeleteItem is needed by /clear and by finishing a guided flow, which
+      # removes the wizard item rather than waiting for its TTL. Its absence
+      # was caught by an AccessDeniedException in testing - which is the
+      # least-privilege policy doing its job. A wildcard would have hidden it.
+      "dynamodb:DeleteItem",
     ]
     resources = [module.state_table.arn]
   }
