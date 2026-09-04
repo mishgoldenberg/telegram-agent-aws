@@ -59,3 +59,6 @@ desktop.ini
 *.err
 plan.txt
 apply*.txt
+
+# runtime state
+.worker.pid
