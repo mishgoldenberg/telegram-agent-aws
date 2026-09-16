@@ -11,6 +11,32 @@ data "archive_file" "src" {
   type        = "zip"
   source_dir  = var.source_dir
   output_path = "${path.module}/.build/${var.name}.zip"
+
+  # Normalise permissions so a Windows checkout and a Linux runner agree.
+  # Necessary but not sufficient - see the hash discussion below.
+  output_file_mode = "0644"
+}
+
+locals {
+  # DO NOT USE THE ZIP'S HASH AS source_code_hash.
+  #
+  # archive_file embeds each file's modification time in the zip, so a fresh
+  # CI checkout produces different zip BYTES from an identical local working
+  # copy. Using output_base64sha256 therefore made every plan want to redeploy
+  # both functions: CI applied, my next local plan wanted to change them back,
+  # and CI wanted to change them again. A permanent ping-pong that looks like
+  # a real diff and trains you to ignore plan output.
+  #
+  # Hashing the file CONTENTS instead is stable across machines, checkouts and
+  # clock skew. Sorted, because fileset ordering is not guaranteed and an
+  # unstable order would reintroduce exactly the problem being fixed.
+  #
+  # Verified not to be a line-endings issue first: .gitattributes pins LF, and
+  # the working tree matched the index byte for byte.
+  source_files = sort(tolist(fileset(var.source_dir, "**")))
+  source_hash = base64sha256(join("", [
+    for f in local.source_files : filesha256("${var.source_dir}/${f}")
+  ]))
 }
 
 ###############################################################################
@@ -104,8 +130,9 @@ resource "aws_lambda_function" "this" {
   handler       = var.handler
   runtime       = var.runtime
 
-  filename         = data.archive_file.src.output_path
-  source_code_hash = data.archive_file.src.output_base64sha256
+  filename = data.archive_file.src.output_path
+  # Content hash, not zip hash - see locals.source_hash above.
+  source_code_hash = local.source_hash
 
   # arm64 (Graviton). Cheaper per GB-second than x86 with no downside for pure
   # Python, and the runtime is identical. Free money.
