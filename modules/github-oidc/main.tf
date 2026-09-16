@@ -66,9 +66,31 @@ resource "aws_iam_openid_connect_provider" "github" {
 locals {
   oidc_provider = aws_iam_openid_connect_provider.github.arn
 
+  # THE SUBJECT PREFIX IS NOT ALWAYS "repo:owner/name".
+  #
+  # GitHub now supports IMMUTABLE SUBJECT CLAIMS, and they are on for this
+  # repository. The prefix becomes:
+  #
+  #   repo:owner@<owner_id>/name@<repo_id>
+  #
+  # e.g. repo:mishgoldenberg@52316500/telegram-agent-aws@1356462814
+  #
+  # The reason is a real attack. With plain names, deleting a repository frees
+  # the name; whoever claims it next inherits every trust policy written
+  # against it, and can deploy to the account. Numeric ids cannot be
+  # re-registered, so the trust survives a rename and dies with the repo.
+  #
+  # This cost two failed CI runs here. Every current tutorial still shows the
+  # name-only form, and the error it produces says only "Not authorized to
+  # perform sts:AssumeRoleWithWebIdentity" - nothing about subject format.
+  #
+  # Check what a repository actually emits with:
+  #   gh api repos/<owner>/<repo>/actions/oidc/customization/sub
+  subject_prefix = coalesce(var.subject_prefix, "repo:${var.github_repo}")
+
   # Plan runs on pull requests. GitHub emits this exact sub for PR events,
   # regardless of branch name.
-  sub_pull_request = "repo:${var.github_repo}:pull_request"
+  sub_pull_request = "${local.subject_prefix}:pull_request"
 
   # Apply runs in a GitHub ENVIRONMENT, and that changes the sub claim.
   #
@@ -87,7 +109,7 @@ locals {
   # itself (deployment branch rules), alongside required reviewers. That puts
   # the branch restriction and the approval gate in one place instead of
   # splitting them between GitHub and an IAM policy.
-  sub_apply_environment = "repo:${var.github_repo}:environment:${var.apply_environment}"
+  sub_apply_environment = "${local.subject_prefix}:environment:${var.apply_environment}"
 }
 
 data "aws_iam_policy_document" "assume_plan" {

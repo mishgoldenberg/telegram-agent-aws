@@ -38,6 +38,26 @@ variable "state_bucket_arn" {
   type        = string
 }
 
+variable "subject_prefix" {
+  description = <<-EOT
+    The literal prefix of the sub claim this repository emits, WITHOUT the
+    trailing :pull_request or :environment:<name>.
+
+    Leave null for the classic form, "repo:owner/name". Set it when the
+    repository has immutable subject claims enabled, where the prefix embeds
+    numeric ids that cannot be re-registered after a rename:
+
+      repo:owner@<owner_id>/name@<repo_id>
+
+    Read the real value rather than assuming - this is the single most likely
+    cause of "Not authorized to perform sts:AssumeRoleWithWebIdentity":
+
+      gh api repos/<owner>/<repo>/actions/oidc/customization/sub
+  EOT
+  type        = string
+  default     = null
+}
+
 variable "apply_environment" {
   description = <<-EOT
     GitHub environment the apply job targets.

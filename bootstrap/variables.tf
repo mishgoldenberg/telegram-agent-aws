@@ -49,3 +49,13 @@ variable "apply_environment" {
   type        = string
   default     = "dev"
 }
+
+variable "subject_prefix" {
+  description = <<-EOT
+    Literal sub-claim prefix this repository emits. Read it, do not guess:
+      gh api repos/<owner>/<repo>/actions/oidc/customization/sub
+    Immutable subject claims are enabled here, so it embeds numeric ids.
+  EOT
+  type        = string
+  default     = "repo:mishgoldenberg@52316500/telegram-agent-aws@1356462814"
+}

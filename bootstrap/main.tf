@@ -221,6 +221,7 @@ module "github_oidc" {
   account_id        = data.aws_caller_identity.current.account_id
   github_repo       = var.github_repo
   apply_environment = var.apply_environment
+  subject_prefix    = var.subject_prefix
   state_bucket_arn  = aws_s3_bucket.state.arn
 }
 
