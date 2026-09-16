@@ -217,11 +217,11 @@ resource "aws_s3_bucket_policy" "state_tls_only" {
 module "github_oidc" {
   source = "../modules/github-oidc"
 
-  project          = var.project
-  account_id       = data.aws_caller_identity.current.account_id
-  github_repo      = var.github_repo
-  default_branch   = var.default_branch
-  state_bucket_arn = aws_s3_bucket.state.arn
+  project           = var.project
+  account_id        = data.aws_caller_identity.current.account_id
+  github_repo       = var.github_repo
+  apply_environment = var.apply_environment
+  state_bucket_arn  = aws_s3_bucket.state.arn
 }
 
 ###############################################################################

@@ -24,13 +24,29 @@ variable "github_repo" {
   }
 }
 
-variable "default_branch" {
-  description = "Branch whose pushes may run apply. Anything else gets plan only."
-  type        = string
-  default     = "main"
-}
+# NOTE: there is deliberately no default_branch variable.
+#
+# An earlier version conditioned the apply role on
+# repo:owner/name:ref:refs/heads/main. That is correct only for a job with no
+# `environment:` declared; once the job targets a GitHub environment the branch
+# leaves the sub claim entirely. Keeping a branch variable here would imply a
+# control this module no longer exercises. Branch restriction belongs on the
+# GitHub environment's deployment rules.
 
 variable "state_bucket_arn" {
   description = "ARN of the Terraform state bucket. Both roles need it; a plan writes the lock object."
   type        = string
+}
+
+variable "apply_environment" {
+  description = <<-EOT
+    GitHub environment the apply job targets.
+
+    This name goes into the sub claim the apply role trusts, because declaring
+    `environment:` on a job makes GitHub swap the ref-based sub for an
+    environment-based one. Restrict which branches may deploy to it on the
+    GitHub environment itself, not here.
+  EOT
+  type        = string
+  default     = "dev"
 }

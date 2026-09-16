@@ -39,8 +39,13 @@ variable "github_repo" {
   default     = "mishgoldenberg/telegram-agent-aws"
 }
 
-variable "default_branch" {
-  description = "Branch whose pushes may run apply. Every other ref gets plan only."
+variable "apply_environment" {
+  description = <<-EOT
+    GitHub environment the apply job targets, which is what the apply role's
+    sub condition trusts. Declaring `environment:` on a job makes GitHub
+    replace the branch-based sub with an environment-based one - the cause of
+    the first failed CI run here.
+  EOT
   type        = string
-  default     = "main"
+  default     = "dev"
 }

@@ -26,6 +26,6 @@ output "trusted_subs" {
   EOT
   value = {
     plan  = local.sub_pull_request
-    apply = local.sub_main_branch
+    apply = local.sub_apply_environment
   }
 }

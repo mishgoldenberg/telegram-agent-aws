@@ -70,8 +70,24 @@ locals {
   # regardless of branch name.
   sub_pull_request = "repo:${var.github_repo}:pull_request"
 
-  # Apply runs only on a push to the default branch.
-  sub_main_branch = "repo:${var.github_repo}:ref:refs/heads/${var.default_branch}"
+  # Apply runs in a GitHub ENVIRONMENT, and that changes the sub claim.
+  #
+  # This is the single most common OIDC trip-hazard, and it cost a failed run
+  # here before being caught:
+  #
+  #   job without `environment:`  -> repo:owner/name:ref:refs/heads/main
+  #   job with `environment: dev` -> repo:owner/name:environment:dev
+  #
+  # The branch disappears from the sub entirely once an environment is in play.
+  # A trust policy written against the ref form fails with the unhelpful
+  # "Not authorized to perform sts:AssumeRoleWithWebIdentity".
+  #
+  # Trusting the environment form is also the better design: which branches may
+  # deploy to an environment is then configured on the GitHub environment
+  # itself (deployment branch rules), alongside required reviewers. That puts
+  # the branch restriction and the approval gate in one place instead of
+  # splitting them between GitHub and an IAM policy.
+  sub_apply_environment = "repo:${var.github_repo}:environment:${var.apply_environment}"
 }
 
 data "aws_iam_policy_document" "assume_plan" {
@@ -114,13 +130,13 @@ data "aws_iam_policy_document" "assume_apply" {
       values   = ["sts.amazonaws.com"]
     }
 
-    # Only a push to the default branch. A pull request from a fork cannot
+    # Only a run targeting the deployment environment. A pull request cannot
     # assume this role, which matters: PR workflows can run attacker-authored
     # code, so they get the read-only plan role and nothing more.
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = [local.sub_main_branch]
+      values   = [local.sub_apply_environment]
     }
   }
 }
@@ -235,7 +251,7 @@ resource "aws_iam_policy" "boundary" {
 
 resource "aws_iam_role" "apply" {
   name                 = "${var.project}-gha-apply"
-  description          = "GitHub Actions: terraform apply on ${var.default_branch}."
+  description          = "GitHub Actions: terraform apply in the ${var.apply_environment} environment."
   assume_role_policy   = data.aws_iam_policy_document.assume_apply.json
   max_session_duration = 3600
 
