@@ -42,6 +42,48 @@ ISO_CASES: list[tuple[str, str]] = [
 ]
 
 
+# ── Write confirmations ───────────────────────────────────────────────────────
+# These are authored in Python precisely so the model cannot get the date wrong,
+# and they stopped working twice without anything failing loudly:
+# create_calendar_event returns "summary" where the formatter looked for
+# "title" (so the rail disengaged for every event and the model wrote the reply
+# instead), and the Russian path printed English weekday and month names.
+CONFIRM_CASES = [
+    ("create_calendar_event",
+     {"summary": "Dentist", "start": "2026-09-18T14:00:00"}, "en",
+     ["Event created", "Dentist", "Friday", "September", "14:00"]),
+    ("create_calendar_event",
+     {"summary": "Тренировка", "start": "2026-09-20T19:00:00"}, "ru",
+     ["Событие создано", "воскресенье", "сентября", "19:00"]),
+    ("set_reminder",
+     {"message": "Call the bank", "fire_at": "2026-09-17T09:00:00"}, "en",
+     ["Reminder set", "Call the bank", "09:00"]),
+    ("set_reminder",
+     {"message": "Позвонить в банк", "fire_at": "2026-09-17T09:00:00"}, "ru",
+     ["Напоминание установлено", "четверг", "сентября"]),
+    ("create_task",
+     {"title": "Renew passport", "due_date": "2026-09-18"}, "en",
+     ["Task created", "Renew passport", "Friday"]),
+    # An error must never be dressed up as a confirmation.
+    ("create_task", {"error": "quota"}, "en", None),
+]
+
+
+def _confirm_checks() -> int:
+    bad = 0
+    print("\nwrite confirmations")
+    for fn, result, lang, wanted in CONFIRM_CASES:
+        got = agent._format_write_confirmation(fn, result, lang)
+        if wanted is None:
+            ok = got is None
+        else:
+            ok = got is not None and all(w in got for w in wanted)
+        bad += not ok
+        label = (got or "None").replace("\n", " / ")[:62]
+        print(f"  [{'PASS' if ok else 'FAIL'}] {fn:22} {lang}  {label}")
+    return bad
+
+
 def main() -> None:
     failed = 0
 
@@ -59,6 +101,8 @@ def main() -> None:
         ok = got == expected
         failed += not ok
         print(f"  [{'PASS' if ok else 'FAIL'}] {value:18} want={expected:12} got={got}")
+
+    failed += _confirm_checks()
 
     print(f"\n  {'all passed' if not failed else str(failed) + ' FAILED'}")
     sys.exit(1 if failed else 0)

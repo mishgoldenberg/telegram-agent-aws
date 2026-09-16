@@ -61,6 +61,18 @@ def install() -> None:
         if hasattr(agent, name):
             setattr(agent, name, _stub(name))
 
+    # run_agent REBUILDS set_reminder on every call, to close over chat_id, and
+    # overwrites the dispatch entry - so stubbing the table is not enough and
+    # test runs were queueing real reminders that would later message Telegram.
+    # Cut it off at the store instead.
+    _record = _stub("reminders.add")
+
+    def fake_add(chat_id, message, fire_at):
+        _record(chat_id=chat_id, message=message, fire_at=fire_at)
+        return "dry-run"
+
+    agent._reminders.add = fake_add
+
 
 CALL_RE = re.compile(r"\[tool round \d+\] CALL : ([a-z_]+)\(")
 GUARD_RE = re.compile(r"\[([A-Z-]+(?:GUARD|RESCUE)|BACKSTOP|BARE-DATE|CONFIRM[^\]]*)\]")
