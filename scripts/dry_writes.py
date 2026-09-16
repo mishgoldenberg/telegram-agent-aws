@@ -18,6 +18,7 @@ import pathlib
 import re
 import sys
 import time
+from datetime import date
 
 ASSISTANT = pathlib.Path(r"C:\Users\User\Documents\llm-agent-test\assistant").resolve()
 if str(ASSISTANT) not in sys.path:
@@ -35,19 +36,49 @@ WRITES = [
 recorded: list[tuple[str, dict]] = []
 
 
+def _fake_result(name: str, kwargs: dict) -> dict:
+    """
+    Mimic each tool's REAL success shape.
+
+    A generic dict is not good enough. The first version returned the same
+    {id, title, summary, start, end} for everything, and the model - which sees
+    these results - read the wrong-looking response from log_calories and
+    save_memory as a failure, then narrated "there was an error or unexpected
+    response from the tools". Four cases failed in the stubbed run that had
+    passed against the live APIs: the harness was manufacturing bugs.
+    """
+    title = kwargs.get("title") or kwargs.get("task_title") or "(dry run)"
+    if name == "create_calendar_event":
+        return {"id": "dry-run", "summary": title,
+                "start": kwargs.get("start"), "end": kwargs.get("end"),
+                "reminder_minutes": kwargs.get("reminder_minutes")}
+    if name in ("create_task", "update_task"):
+        return {"id": "dry-run", "title": title,
+                "due_date": kwargs.get("due_date"), "list": kwargs.get("list_name")}
+    if name == "complete_task":
+        return {"completed": True, "id": "dry-run", "title": title}
+    if name == "delete_calendar_event":
+        return {"deleted": True, "id": "dry-run", "title": title}
+    if name == "save_memory":
+        return {"id": 1, "fact": kwargs.get("fact", "(dry run)"),
+                "category": kwargs.get("category", "general"),
+                "created": date.today().isoformat()}
+    if name == "log_calories":
+        return {"logged": True, "id": 1, "date": kwargs.get("date_str"),
+                "item": kwargs.get("item"), "calories": kwargs.get("calories")}
+    if name == "log_habit":
+        return {"logged": True, "id": 1, "date": kwargs.get("date_str"),
+                "habit": kwargs.get("habit")}
+    if name in ("set_reminder", "reminders.add"):
+        return {"status": "reminder_set", "id": "dry-run",
+                "message": kwargs.get("message"), "fire_at": kwargs.get("fire_at")}
+    return {"ok": True, "id": "dry-run"}
+
+
 def _stub(name: str):
     def fake(**kwargs):
         recorded.append((name, kwargs))
-        # Shaped like the real responses so the confirmation formatters,
-        # which are part of what is being tested, still have something to read.
-        return {
-            "id": "dry-run",
-            "title": kwargs.get("title", "(dry run)"),
-            "summary": kwargs.get("title", "(dry run)"),
-            "start": kwargs.get("start") or kwargs.get("due_date"),
-            "end": kwargs.get("end"),
-            "due_date": kwargs.get("due_date"),
-        }
+        return _fake_result(name, kwargs)
     return fake
 
 

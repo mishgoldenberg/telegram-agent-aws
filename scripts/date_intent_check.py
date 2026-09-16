@@ -79,6 +79,18 @@ CLOCK_CASES = [
     ("what do i have today",                       None),
 ]
 
+# Titles the rescue builds from the user's own sentence when the model produced
+# no tool call. Two bugs here were invisible until the titles were printed: a
+# bare "в" matched inside "тренировка", giving "Трениро ка", and "8pm" was split
+# so the event came out called "Gym pm".
+TITLE_CASES = [
+    ("создай событие завтра в 10 утра тренировка", "Тренировка"),
+    ("add gym to my calendar tomorrow at 8pm",     "Gym"),
+    ("put dentist on friday 14:00",                "Dentist"),
+    ("book me 2 hours of study tomorrow at 9",     "Study"),
+    ("создай событие завтра в 10 утра",            "Событие"),   # nothing left
+]
+
 EVENT_CASES = [
     ("put dentist on friday 14:00",            True),
     ("schedule a call with mom sunday 19:00",   True),
@@ -110,6 +122,13 @@ def _extra_checks() -> int:
         ok = got is want
         bad += not ok
         print(f"  [{'PASS' if ok else 'FAIL'}] {text[:38]:40} want={want!s:6} got={got}")
+
+    print("\nevent title from the user's own words")
+    for text, want in TITLE_CASES:
+        got = agent._extract_event_title(text)
+        ok = got == want
+        bad += not ok
+        print(f"  [{'PASS' if ok else 'FAIL'}] {text[:38]:40} want={want!r:14} got={got!r}")
 
     print(f"\n  {'all passed' if not bad else str(bad) + ' failed'}")
     return bad

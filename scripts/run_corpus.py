@@ -40,7 +40,9 @@ import corpus  # noqa: E402
 import dry_writes  # noqa: E402
 
 CALL_RE = re.compile(r"\[tool round \d+\] CALL : ([a-z_]+)\(")
-GUARD_RE = re.compile(r"\[([A-Z-]+GUARD|BACKSTOP|BARE-DATE|LIST-RESCUE|DIRECT|CONFIRM|SHORT-CIRCUIT)[^\]]*\]")
+GUARD_RE = re.compile(
+    r"\[([A-Z-]+GUARD|[A-Z-]*RESCUE|BACKSTOP|BARE-DATE|META|DIRECT|CONFIRM"
+    r"|SHORT-CIRCUIT|DEDUPE-GUARD)[^\]]*\]")
 
 # Replies that mean the user got nothing useful.
 BAD_REPLY = re.compile(
@@ -66,6 +68,7 @@ def run_one(prompt: str) -> dict:
     return {
         "prompt": prompt,
         "tools": CALL_RE.findall(log),
+        "rescued": [tool for rx, tool in RESCUE_CALLS if rx.search(log)],
         "guards": sorted(set(GUARD_RE.findall(log))),
         "reply_head": (reply or "")[:100],
         "reply_len": len(reply or ""),
@@ -74,8 +77,28 @@ def run_one(prompt: str) -> dict:
     }
 
 
+# A rescue answers the question in Python when the model produced no tool call.
+# The user gets the right answer from live API data, so counting that as a
+# routing failure measures the wrong thing - it marks the recovery as the bug.
+#
+# Each pattern matches the rescue's OWN log line, so the credit is for the call
+# it actually made: LIST-RESCUE covers three different tools and must not be
+# allowed to satisfy an expectation it did not meet.
+RESCUE_CALLS = [
+    (re.compile(r"\[LIST-RESCUE\] inbox query"),        "summarize_unread"),
+    (re.compile(r"\[LIST-RESCUE\].*listing tasks"),     "list_tasks"),
+    (re.compile(r"\[LIST-RESCUE\].*listing '"),         "list_calendar_events"),
+    (re.compile(r"\[MAIL-RESCUE\]"),                    "summarize_unread"),
+    (re.compile(r"\[BARE-DATE\].*listing calendar"),    "list_calendar_events"),
+    (re.compile(r"\[WRITE-RESCUE\].*creating task"),    "create_task"),
+    (re.compile(r"\[WRITE-RESCUE\].*creating event"),   "create_calendar_event"),
+    (re.compile(r"\[KNOWLEDGE-RESCUE\]"),               "web_search"),
+    (re.compile(r"\[EVENT-GUARD\].*create_calendar_event"), "create_calendar_event"),
+]
+
+
 def judge(expected, got: dict) -> tuple[bool, str]:
-    tools, reply = got["tools"], got["reply_head"]
+    tools, reply = got["tools"] + got["rescued"], got["reply_head"]
 
     if got["exception"]:
         return False, "raised"
