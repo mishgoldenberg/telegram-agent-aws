@@ -28,3 +28,19 @@ variable "owner" {
   type        = string
   default     = "mishgoldenberg"
 }
+
+variable "github_repo" {
+  description = <<-EOT
+    owner/name of the repository whose GitHub Actions may deploy to this
+    account. Goes directly into the sub condition of the CI trust policies -
+    see modules/github-oidc for why that one string is the security boundary.
+  EOT
+  type        = string
+  default     = "mishgoldenberg/telegram-agent-aws"
+}
+
+variable "default_branch" {
+  description = "Branch whose pushes may run apply. Every other ref gets plan only."
+  type        = string
+  default     = "main"
+}

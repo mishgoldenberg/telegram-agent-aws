@@ -202,6 +202,29 @@ resource "aws_s3_bucket_policy" "state_tls_only" {
 }
 
 ###############################################################################
+# GitHub Actions OIDC
+#
+# Lives here rather than in envs/dev because it is ACCOUNT-level, not
+# environment-level: one OIDC provider per AWS account, and the CI roles deploy
+# every environment. Putting it in envs/dev would mean envs/prod either
+# duplicates the provider - which AWS rejects, one per URL per account - or
+# reaches across state files to find it.
+#
+# bootstrap is already the shared, rarely-changed, account-wide stack, and it
+# owns the state bucket these roles need access to. Same lifecycle, same place.
+###############################################################################
+
+module "github_oidc" {
+  source = "../modules/github-oidc"
+
+  project          = var.project
+  account_id       = data.aws_caller_identity.current.account_id
+  github_repo      = var.github_repo
+  default_branch   = var.default_branch
+  state_bucket_arn = aws_s3_bucket.state.arn
+}
+
+###############################################################################
 # Locking — no resource required
 ###############################################################################
 

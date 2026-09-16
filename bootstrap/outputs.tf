@@ -3,6 +3,21 @@ output "state_bucket_name" {
   value       = aws_s3_bucket.state.id
 }
 
+output "gha_plan_role_arn" {
+  description = "Repository variable AWS_PLAN_ROLE_ARN."
+  value       = module.github_oidc.plan_role_arn
+}
+
+output "gha_apply_role_arn" {
+  description = "Repository variable AWS_APPLY_ROLE_ARN."
+  value       = module.github_oidc.apply_role_arn
+}
+
+output "gha_trusted_subs" {
+  description = "The exact sub claims CI may present. First thing to check when a workflow cannot assume a role."
+  value       = module.github_oidc.trusted_subs
+}
+
 output "region" {
   description = "Region the backend lives in."
   value       = var.region

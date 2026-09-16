@@ -98,6 +98,27 @@ resource "aws_ssm_parameter" "bot_token" {
   type        = "SecureString"
   value       = var.telegram_bot_token
 
+  # THE SECRET'S VALUE IS SET ONCE AND THEN NEVER MANAGED BY TERRAFORM.
+  #
+  # Terraform owns the parameter's existence, name, type and tags. It does not
+  # own the value. Two things follow, both of them the point:
+  #
+  #   CI never needs the token. Without this, every `terraform apply` in
+  #   GitHub Actions would have to be handed the real bot token to write, which
+  #   means storing a live credential in GitHub secrets - a third party, on a
+  #   public repository - purely to rewrite a value that is already correct.
+  #
+  #   Plans stay clean. A plan that cannot see the current value would
+  #   otherwise show a permanent diff on a sensitive parameter, and a plan with
+  #   permanent noise in it is a plan people stop reading.
+  #
+  # Rotating the token is a deliberate out-of-band act:
+  #   aws ssm put-parameter --name /tg-agent/dev/bot_token \
+  #     --value <new> --type SecureString --overwrite
+  lifecycle {
+    ignore_changes = [value]
+  }
+
   tags = { Component = "secrets" }
 }
 

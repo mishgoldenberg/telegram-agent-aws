@@ -1,0 +1,177 @@
+# Terraform CI/CD via GitHub OIDC. No AWS keys are stored anywhere.
+#
+# Pull request  -> terraform plan with a READ-ONLY role, posted as a comment
+# Push to main  -> terraform apply with the apply role
+#
+# The split matters. A pull request can run code an outside contributor wrote,
+# including changes to this workflow file. If PRs could assume the apply role,
+# opening a PR would be enough to deploy to the account. They get plan only.
+
+name: terraform
+
+on:
+  pull_request:
+    paths: ["**.tf", "lambdas/**", ".github/workflows/terraform.yml"]
+  push:
+    branches: [main]
+    paths: ["**.tf", "lambdas/**", ".github/workflows/terraform.yml"]
+  workflow_dispatch:
+
+# THIS IS WHAT MAKES OIDC WORK. Without id-token: write, GitHub does not mint
+# a JWT and the credentials step fails with a confusing "Credentials could not
+# be loaded". contents: read is the default-deny baseline; pull-requests: write
+# is only so the plan can be posted as a comment.
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+env:
+  TF_VERSION: "1.15.8"
+  AWS_REGION: eu-central-1
+  # Terraform in CI is never interactive; without this a prompt becomes a hang
+  # that burns Actions minutes until the job times out.
+  TF_IN_AUTOMATION: "true"
+
+# One deploy at a time. Terraform's S3 lock would reject a concurrent apply
+# anyway, but failing here is clearer than failing mid-apply, and a queued run
+# is better than a lost one. Never cancel an apply in progress: that can leave
+# state written but resources half-created.
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: plan (dev)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: envs/dev
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Assume the read-only plan role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          # Named so CloudTrail shows which PR made each call.
+          role-session-name: gha-plan-pr-${{ github.event.pull_request.number }}
+
+      - name: Confirm who we are
+        run: aws sts get-caller-identity
+
+      - name: Format check
+        run: terraform fmt -check -recursive ../..
+
+      - name: Init
+        run: terraform init -input=false
+
+      - name: Validate
+        run: terraform validate -no-color
+
+      # NO BOT TOKEN IS PASSED, HERE OR IN APPLY.
+      #
+      # The SSM parameter carries ignore_changes = [value], so Terraform never
+      # reads or rewrites the secret after it is first created. That is why
+      # this repository has no AWS keys AND no Telegram token in GitHub - the
+      # only CI configuration is two role ARNs and a numeric user id, none of
+      # which is a credential.
+      #
+      # telegram_user_id has no default on purpose: if the repository variable
+      # is missing, the apply fails loudly rather than silently setting the
+      # bot's allowlist to nobody.
+      - name: Plan
+        id: plan
+        run: |
+          terraform plan -input=false -no-color -lock-timeout=5m \
+            -var="telegram_user_id=${{ vars.TELEGRAM_USER_ID }}" \
+            -out=tfplan 2>&1 | tee plan.txt
+          echo "exit=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Comment the plan on the PR
+        uses: actions/github-script@v7
+        if: always()
+        with:
+          script: |
+            const fs = require('fs');
+            let body = '_plan produced no output_';
+            try {
+              const raw = fs.readFileSync('envs/dev/plan.txt', 'utf8');
+              // GitHub comments cap at 65536 characters; keep the tail, which
+              // holds the summary line that actually matters.
+              const clipped = raw.length > 60000
+                ? '...(truncated)...\n' + raw.slice(-60000)
+                : raw;
+              body = ['#### `terraform plan` — dev', '```terraform', clipped, '```'].join('\n');
+            } catch (e) {
+              body = `plan.txt unreadable: ${e.message}`;
+            }
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
+
+      - name: Fail if plan failed
+        if: steps.plan.outputs.exit != '0'
+        run: exit 1
+
+  apply:
+    name: apply (dev)
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    # A GitHub environment can require manual approval before this job runs.
+    # Not enabled for dev; prod should have it.
+    environment: dev
+    defaults:
+      run:
+        working-directory: envs/dev
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Assume the apply role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-apply-${{ github.run_id }}
+
+      - name: Confirm who we are
+        run: aws sts get-caller-identity
+
+      - name: Init
+        run: terraform init -input=false
+
+      - name: Apply
+        run: |
+          terraform apply -input=false -no-color -auto-approve -lock-timeout=5m \
+            -var="telegram_user_id=${{ vars.TELEGRAM_USER_ID }}"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Applied to dev"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| commit | \`${{ github.sha }}\` |"
+            echo "| actor | ${{ github.actor }} |"
+            echo "| region | ${{ env.AWS_REGION }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
