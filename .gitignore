@@ -20,6 +20,10 @@ memory.db
 *.sqlite3
 .autostart_state
 ab_results/
+# Corpus output carries reply prefixes - real event titles and mail
+# senders. This repository is public.
+corpus_results.json
+corpus_results*.json
 
 # ---- python ----
 venv/
