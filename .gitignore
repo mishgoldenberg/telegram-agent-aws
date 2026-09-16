@@ -68,3 +68,7 @@ plan*.txt
 apply*.txt
 tfplan
 
+
+# any terraform run transcript - they embed resource ids and plan detail
+envs/**/*.txt
+bootstrap/*.txt
