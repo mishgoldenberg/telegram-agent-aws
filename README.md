@@ -154,6 +154,11 @@ write its own logs" and "can write to, and create, any log group in the account"
 | SNS / SSM Standard / Budgets | free tiers | $0.00 |
 | **Total** | | **< $0.05 / month** |
 
+**What the bill actually says:** $0.17 month-to-date for October 1–4, 2026. Almost all of that is
+one KMS key that IAM Identity Center created for the SSO login, which sits outside this Terraform
+stack, plus $0.03 tax. The pipeline itself (API Gateway, Lambda, SQS, DynamoDB, S3) came to about
+$0.001 for September in Cost Explorer.
+
 Three things deliberately excluded to hold that: **no VPC for the Lambdas** (a NAT Gateway is
 ~$32/month and there are no private resources to reach), **no customer-managed KMS keys**
 ($1/month each), **no custom domain** ($0.50/month for a hosted zone, for a URL nobody types).
